@@ -73,11 +73,14 @@ MMCV_WITH_OPS=1 pip3.9 install -e . -v
 
 ## Demo
 
+Single GPU:
 ```bash
-# for bevformer_base
-./tools/dist_test.sh ./projects/configs/bevformer/bevformer_base.py ./ckpts/bevformer_r101_dcn_24ep.pth 1
-# for bevformer_tiny
-./tools/dist_test.sh ./projects/configs/bevformer/bevformer_tiny.py ./ckpts/bevformer_tiny_epoch_24.pth 1
+PYTHONPATH="$(pwd)":$PYTHONPATH python3.9 -m torch.distributed.launch --nproc_per_node=1 tools/test.py ./projects/configs/bevformer/bevformer_base.py ./ckpts/bevformer_r101_dcn_24ep.pth --launcher none --eval bbox
+```
+
+Single CPU:
+```bash
+PYTHONPATH="$(pwd)":$PYTHONPATH python3.9 -m torch.distributed.launch tools/test.py ./projects/configs/bevformer/bevformer_base.py ./ckpts/bevformer_r101_dcn_24ep.pth --cpu --launcher none --eval bbox
 ```
 
 

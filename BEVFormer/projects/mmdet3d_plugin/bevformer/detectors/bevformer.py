@@ -66,6 +66,9 @@ class BEVFormer(MVXTwoStageDetector):
 
     def extract_img_feat(self, img, img_metas, len_queue=None):
         """Extract features of images."""
+        if hasattr(img, 'data'): # for cpu
+            img = img.data[0]
+
         B = img.size(0)
         if img is not None:
             
@@ -234,6 +237,9 @@ class BEVFormer(MVXTwoStageDetector):
         return losses
 
     def forward_test(self, img_metas, img=None, **kwargs):
+        if hasattr(img_metas[0], 'data'): # for cpu
+            img_metas = [[img_metas[0].data[0][0]]]
+
         for var, name in [(img_metas, 'img_metas')]:
             if not isinstance(var, list):
                 raise TypeError('{} must be a list, but got {}'.format(
