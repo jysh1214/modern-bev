@@ -3,6 +3,7 @@
 #  Modified by Zhiqi Li
 # ---------------------------------------------
 
+import sys
 import mmcv
 from nuscenes.nuscenes import NuScenes
 from PIL import Image
@@ -470,8 +471,8 @@ def render_sample_data(
 
 if __name__ == '__main__':
     nusc = NuScenes(version='v1.0-trainval', dataroot='./data/nuscenes', verbose=True)
-    # render_annotation('7603b030b42a4b1caa8c443ccc1a7d52')
-    bevformer_results = mmcv.load('test/bevformer_base/Thu_Jun__9_16_22_37_2022/pts_bbox/results_nusc.json')
+    result_json_file = sys.argv[1]
+    bevformer_results = mmcv.load(result_json_file)
     sample_token_list = list(bevformer_results['results'].keys())
     for id in range(0, 10):
         render_sample_data(sample_token_list[id], pred_data=bevformer_results, out_path=sample_token_list[id])
