@@ -3,7 +3,7 @@
 # ---------------------------------------------
 #  Modified by Zhiqi Li
 # ---------------------------------------------
-
+import os
 import torch
 from mmcv.runner import force_fp32, auto_fp16
 from mmdet.models import DETECTORS
@@ -122,6 +122,8 @@ class BEVFormer(MVXTwoStageDetector):
         else:
             img = kwargs['img'][0].data[0]
             img_metas = kwargs['img_metas'][0].data[0][0]
+        filename = img_metas['filename'][0].split('__')[2].split('.')[0]
+        print(filename)
 
         ori_shape = img_metas['ori_shape']
         ori_shape = torch.tensor(ori_shape)
@@ -168,6 +170,7 @@ class BEVFormer(MVXTwoStageDetector):
             pcd_horizontal_flip=pcd_horizontal_flip,
             pcd_vertical_flip=pcd_vertical_flip,
             can_bus=can_bus,
+            filename=filename,
         )
     
     def obtain_history_bev(self, imgs_queue, img_metas_list):
@@ -204,6 +207,7 @@ class BEVFormer(MVXTwoStageDetector):
         pcd_horizontal_flip,
         pcd_vertical_flip,
         can_bus,
+        filename,
     ):
         # do not use temporal information
         if not self.video_test_mode:
@@ -218,7 +222,8 @@ class BEVFormer(MVXTwoStageDetector):
         else:
             can_bus[-1] = 0
             can_bus[:3] = 0
-
+        os.mkdir(f'/home/BEVFormer/assets/{filename}')
+        np.save(f"assets/{filename}/{filename}_img_1x6x3x928x1600xf32.npy", img.unsqueeze(0).cpu().numpy())
         new_prev_bev, bbox_results =  self.simple_test(
             img=img,
             rescale=rescale,
@@ -232,6 +237,10 @@ class BEVFormer(MVXTwoStageDetector):
         self.prev_frame_info['prev_angle'] = tmp_angle
         self.prev_frame_info['prev_bev'] = new_prev_bev
         # boxes_3d, scores_3d, labels_3d = bbox_results
+        np.save(f"assets/{filename}/{filename}_boxes_3d_300x9xf32.npy", bbox_results[0]['pts_bbox']['boxes_3d'].tensor.cpu().numpy())
+        np.save(f"assets/{filename}/{filename}_scores_3d_300xf32.npy", bbox_results[0]['pts_bbox']['scores_3d'].cpu().numpy())
+        np.save(f"assets/{filename}/{filename}_labels_3d_300xsi64.npy", bbox_results[0]['pts_bbox']['labels_3d'].cpu().numpy())
+
         return bbox_results
 
     def simple_test(
