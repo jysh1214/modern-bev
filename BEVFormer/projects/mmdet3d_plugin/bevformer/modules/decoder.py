@@ -64,12 +64,18 @@ class DetectionTransformerDecoder(TransformerLayerSequence):
         self.fp16_enabled = False
 
     def forward(self,
-                query,
-                *args,
-                reference_points=None,
-                reg_branches=None,
-                key_padding_mask=None,
-                **kwargs):
+        query,
+        key,
+        value,
+        query_pos=None,
+        reference_points=None,
+        reg_branches=None,
+        key_padding_mask=None,
+        cls_branches=None,
+        spatial_shapes=None,
+        level_start_index=None,
+    ):
+                # **kwargs):
         """Forward function for `Detr3DTransformerDecoder`.
         Args:
             query (Tensor): Input query with shape
@@ -87,6 +93,14 @@ class DetectionTransformerDecoder(TransformerLayerSequence):
                 return_intermediate is `False`, otherwise it has shape
                 [num_layers, num_query, bs, embed_dims].
         """
+        # TODO: We will use explicit keyword arguments when we decouple mmcv. 
+        # (/mmcv/mmcv/cnn/bricks/transformer.py:492)
+        args = (key, value, query_pos)
+        exclude_keys = {'self', 'args', 'query', 'key', 'value', 'query_pos', 'reference_points', 
+            'key_padding_mask', 'reg_branches', 'cls_branches', 'exclude_keys'}
+        local_vars = locals()
+        kwargs = {k: v for k, v in local_vars.items() if k not in exclude_keys}
+
         output = query
         intermediate = []
         intermediate_reference_points = []
@@ -229,17 +243,19 @@ class CustomMSDeformableAttention(BaseModule):
     @deprecated_api_warning({'residual': 'identity'},
                             cls_name='MultiScaleDeformableAttention')
     def forward(self,
-                query,
-                key=None,
-                value=None,
-                identity=None,
-                query_pos=None,
-                key_padding_mask=None,
-                reference_points=None,
-                spatial_shapes=None,
-                level_start_index=None,
-                flag='decoder',
-                **kwargs):
+        query,
+        key=None,
+        value=None,
+        identity=None,
+        query_pos=None,
+        key_pos=None,
+        attn_mask=None,
+        key_padding_mask=None,
+        reference_points=None,
+        spatial_shapes=None,
+        level_start_index=None,
+        flag='decoder',
+    ):
         """Forward Function of MultiScaleDeformAttention.
 
         Args:

@@ -125,19 +125,20 @@ class TemporalSelfAttention(BaseModule):
         xavier_init(self.output_proj, distribution='uniform', bias=0.)
         self._is_init = True
 
-    def forward(self,
-                query,
-                key=None,
-                value=None,
-                identity=None,
-                query_pos=None,
-                key_padding_mask=None,
-                reference_points=None,
-                spatial_shapes=None,
-                level_start_index=None,
-                flag='decoder',
-
-                **kwargs):
+    def forward(
+        self,
+        query,
+        key=None,
+        value=None,
+        identity=None,
+        query_pos=None,
+        key_pos=None,
+        reference_points=None,
+        key_padding_mask=None,
+        spatial_shapes=None,
+        level_start_index=None,
+        flag='decoder',
+    ):
         """Forward Function of MultiScaleDeformAttention.
 
         Args:

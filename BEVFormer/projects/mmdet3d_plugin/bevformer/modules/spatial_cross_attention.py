@@ -73,20 +73,22 @@ class SpatialCrossAttention(BaseModule):
         xavier_init(self.output_proj, distribution='uniform', bias=0.)
     
     @force_fp32(apply_to=('query', 'key', 'value', 'query_pos', 'reference_points_cam'))
-    def forward(self,
-                query,
-                key,
-                value,
-                residual=None,
-                query_pos=None,
-                key_padding_mask=None,
-                reference_points=None,
-                spatial_shapes=None,
-                reference_points_cam=None,
-                bev_mask=None,
-                level_start_index=None,
-                flag='encoder',
-                **kwargs):
+    def forward(
+        self,
+        query,
+        key,
+        value,
+        residual=None,
+        identity=None,
+        query_pos=None,
+        key_padding_mask=None,
+        reference_points=None,
+        spatial_shapes=None,
+        reference_points_cam=None,
+        bev_mask=None,
+        level_start_index=None,
+        flag='encoder',
+    ):
         """Forward Function of Detr3DCrossAtten.
         Args:
             query (Tensor): Query of Transformer with shape
@@ -270,17 +272,18 @@ class MSDeformableAttention3D(BaseModule):
         xavier_init(self.output_proj, distribution='uniform', bias=0.)
         self._is_init = True
 
-    def forward(self,
-                query,
-                key=None,
-                value=None,
-                identity=None,
-                query_pos=None,
-                key_padding_mask=None,
-                reference_points=None,
-                spatial_shapes=None,
-                level_start_index=None,
-                **kwargs):
+    def forward(
+        self,
+        query,
+        key,
+        value,
+        identity=None,
+        query_pos=None,
+        key_padding_mask=None,
+        reference_points=None,
+        spatial_shapes=None,
+        level_start_index=None,
+    ):
         """Forward Function of MultiScaleDeformAttention.
         Args:
             query (Tensor): Query of Transformer with shape

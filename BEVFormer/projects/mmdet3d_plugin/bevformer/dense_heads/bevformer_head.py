@@ -9,6 +9,7 @@ from mmdet.models.utils.transformer import inverse_sigmoid
 from mmdet.models import HEADS
 from mmdet.models.dense_heads import DETRHead
 from mmdet3d.core.bbox.coders import build_bbox_coder
+from mmdet3d.core.bbox.structures.lidar_box3d import LiDARInstance3DBoxes
 from projects.mmdet3d_plugin.core.bbox.util import normalize_bbox
 from mmcv.runner import force_fp32, auto_fp16
 
@@ -115,7 +116,15 @@ class BEVFormerHead(DETRHead):
                 nn.init.constant_(m[-1].bias, bias_init)
 
     @auto_fp16(apply_to=('mlvl_feats'))
-    def forward(self, mlvl_feats, img_metas, prev_bev=None,  only_bev=False):
+    def forward(
+        self,
+        mlvl_feats,
+        can_bus=None,
+        lidar2img=None,
+        img_shape=None,
+        prev_bev=None,
+        only_bev=False,
+    ):
         """Forward function.
         Args:
             mlvl_feats (tuple[Tensor]): Features from the upstream
@@ -149,8 +158,10 @@ class BEVFormerHead(DETRHead):
                 grid_length=(self.real_h / self.bev_h,
                              self.real_w / self.bev_w),
                 bev_pos=bev_pos,
-                img_metas=img_metas,
                 prev_bev=prev_bev,
+                can_bus=can_bus,
+                lidar2img=lidar2img,
+                img_shape=img_shape,
             )
         else:
             outputs = self.transformer(
@@ -164,8 +175,10 @@ class BEVFormerHead(DETRHead):
                 bev_pos=bev_pos,
                 reg_branches=self.reg_branches if self.with_box_refine else None,  # noqa:E501
                 cls_branches=self.cls_branches if self.as_two_stage else None,
-                img_metas=img_metas,
-                prev_bev=prev_bev
+                prev_bev=prev_bev,
+                can_bus=can_bus,
+                lidar2img=lidar2img,
+                img_shape=img_shape,
         )
 
         bev_embed, hs, init_reference, inter_references = outputs
@@ -480,7 +493,7 @@ class BEVFormerHead(DETRHead):
         return loss_dict
 
     @force_fp32(apply_to=('preds_dicts'))
-    def get_bboxes(self, preds_dicts, img_metas, rescale=False):
+    def get_bboxes(self, preds_dicts, rescale=False):
         """Generate bboxes from bbox head predictions.
         Args:
             preds_dicts (tuple[list[dict]]): Prediction results.
@@ -500,7 +513,8 @@ class BEVFormerHead(DETRHead):
             bboxes[:, 2] = bboxes[:, 2] - bboxes[:, 5] * 0.5
 
             code_size = bboxes.shape[-1]
-            bboxes = img_metas[i]['box_type_3d'](bboxes, code_size)
+            # bboxes = img_metas[i]['box_type_3d'](bboxes, code_size)
+            bboxes = LiDARInstance3DBoxes(bboxes, box_dim=code_size)
             scores = preds['scores']
             labels = preds['labels']
 
@@ -541,8 +555,10 @@ class BEVFormerHead_GroupDETR(BEVFormerHead):
                 grid_length=(self.real_h / self.bev_h,
                              self.real_w / self.bev_w),
                 bev_pos=bev_pos,
-                img_metas=img_metas,
                 prev_bev=prev_bev,
+                can_bus=can_bus,
+                lidar2img=lidar2img,
+                img_shape=img_shape,
             )
         else:
             outputs = self.transformer(
@@ -556,9 +572,11 @@ class BEVFormerHead_GroupDETR(BEVFormerHead):
                 bev_pos=bev_pos,
                 reg_branches=self.reg_branches if self.with_box_refine else None,  # noqa:E501
                 cls_branches=self.cls_branches if self.as_two_stage else None,
-                img_metas=img_metas,
-                prev_bev=prev_bev
-        )
+                prev_bev=prev_bev,
+                can_bus=can_bus,
+                lidar2img=lidar2img,
+                img_shape=img_shape,
+            )
 
         bev_embed, hs, init_reference, inter_references = outputs
         hs = hs.permute(0, 2, 1, 3)

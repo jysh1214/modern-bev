@@ -110,7 +110,10 @@ class PerceptionTransformer(BaseModule):
             grid_length=[0.512, 0.512],
             bev_pos=None,
             prev_bev=None,
-            **kwargs):
+            can_bus=None,
+            lidar2img=None,
+            img_shape=None,
+        ):
         """
         obtain bev features.
         """
@@ -120,12 +123,9 @@ class PerceptionTransformer(BaseModule):
         bev_pos = bev_pos.flatten(2).permute(2, 0, 1)
 
         # obtain rotation angle and shift with ego motion
-        delta_x = np.array([each['can_bus'][0]
-                           for each in kwargs['img_metas']])
-        delta_y = np.array([each['can_bus'][1]
-                           for each in kwargs['img_metas']])
-        ego_angle = np.array(
-            [each['can_bus'][-2] / np.pi * 180 for each in kwargs['img_metas']])
+        delta_x = np.array([can_bus[0]])
+        delta_y = np.array([can_bus[1]])
+        ego_angle = np.array([can_bus[-2] / np.pi * 180])
         grid_length_y = grid_length[0]
         grid_length_x = grid_length[1]
         translation_length = np.sqrt(delta_x ** 2 + delta_y ** 2)
@@ -146,7 +146,9 @@ class PerceptionTransformer(BaseModule):
             if self.rotate_prev_bev:
                 for i in range(bs):
                     # num_prev_bev = prev_bev.size(1)
-                    rotation_angle = kwargs['img_metas'][i]['can_bus'][-1]
+                    # TODO: Handle different batch sizes
+                    # rotation_angle = kwargs['img_metas'][i]['can_bus'][-1]
+                    rotation_angle = can_bus[-1]
                     tmp_prev_bev = prev_bev[:, i].reshape(
                         bev_h, bev_w, -1).permute(2, 0, 1)
                     tmp_prev_bev = rotate(tmp_prev_bev, rotation_angle,
@@ -156,8 +158,7 @@ class PerceptionTransformer(BaseModule):
                     prev_bev[:, i] = tmp_prev_bev[:, 0]
 
         # add can bus signals
-        can_bus = bev_queries.new_tensor(
-            [each['can_bus'] for each in kwargs['img_metas']])  # [:, :]
+        can_bus = bev_queries.new_tensor(can_bus.unsqueeze(0), device=bev_queries.device)
         can_bus = self.can_bus_mlp(can_bus)[None, :, :]
         bev_queries = bev_queries + can_bus * self.use_can_bus
 
@@ -194,24 +195,29 @@ class PerceptionTransformer(BaseModule):
             level_start_index=level_start_index,
             prev_bev=prev_bev,
             shift=shift,
-            **kwargs
+            lidar2img=lidar2img,
+            img_shape=img_shape,
         )
 
         return bev_embed
 
     @auto_fp16(apply_to=('mlvl_feats', 'bev_queries', 'object_query_embed', 'prev_bev', 'bev_pos'))
-    def forward(self,
-                mlvl_feats,
-                bev_queries,
-                object_query_embed,
-                bev_h,
-                bev_w,
-                grid_length=[0.512, 0.512],
-                bev_pos=None,
-                reg_branches=None,
-                cls_branches=None,
-                prev_bev=None,
-                **kwargs):
+    def forward(
+        self,
+        mlvl_feats,
+        bev_queries,
+        object_query_embed,
+        bev_h,
+        bev_w,
+        grid_length=[0.512, 0.512],
+        bev_pos=None,
+        reg_branches=None,
+        cls_branches=None,
+        prev_bev=None,
+        can_bus=None,
+        lidar2img=None,
+        img_shape=None,
+    ):
         """Forward function for `Detr3DTransformer`.
         Args:
             mlvl_feats (list(Tensor)): Input queries from
@@ -257,7 +263,10 @@ class PerceptionTransformer(BaseModule):
             grid_length=grid_length,
             bev_pos=bev_pos,
             prev_bev=prev_bev,
-            **kwargs)  # bev_embed shape: bs, bev_h*bev_w, embed_dims
+            can_bus=can_bus,
+            lidar2img=lidar2img,
+            img_shape=img_shape,
+        )  # bev_embed shape: bs, bev_h*bev_w, embed_dims
 
         bs = mlvl_feats[0].size(0)
         query_pos, query = torch.split(
@@ -282,7 +291,7 @@ class PerceptionTransformer(BaseModule):
             cls_branches=cls_branches,
             spatial_shapes=torch.tensor([[bev_h, bev_w]], device=query.device),
             level_start_index=torch.tensor([0], device=query.device),
-            **kwargs)
+        )
 
         inter_references_out = inter_references
 

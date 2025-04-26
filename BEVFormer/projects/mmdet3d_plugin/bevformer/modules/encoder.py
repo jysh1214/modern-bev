@@ -86,17 +86,14 @@ class BEVFormerEncoder(TransformerLayerSequence):
 
     # This function must use fp32!!!
     @force_fp32(apply_to=('reference_points', 'img_metas'))
-    def point_sampling(self, reference_points, pc_range,  img_metas):
+    def point_sampling(self, reference_points, pc_range,  img_shape, lidar2img):
         # NOTE: close tf32 here.
         allow_tf32 = torch.backends.cuda.matmul.allow_tf32
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.backends.cudnn.allow_tf32 = False
 
-        lidar2img = []
-        for img_meta in img_metas:
-            lidar2img.append(img_meta['lidar2img'])
-        lidar2img = np.asarray(lidar2img)
-        lidar2img = reference_points.new_tensor(lidar2img)  # (B, N, 4, 4)
+        lidar2img = reference_points.new_tensor(
+            lidar2img.unsqueeze(0).to(reference_points.device))  # (B, N, 4, 4)
         reference_points = reference_points.clone()
 
         reference_points[..., 0:1] = reference_points[..., 0:1] * \
@@ -127,8 +124,8 @@ class BEVFormerEncoder(TransformerLayerSequence):
         reference_points_cam = reference_points_cam[..., 0:2] / torch.maximum(
             reference_points_cam[..., 2:3], torch.ones_like(reference_points_cam[..., 2:3]) * eps)
 
-        reference_points_cam[..., 0] /= img_metas[0]['img_shape'][0][1]
-        reference_points_cam[..., 1] /= img_metas[0]['img_shape'][0][0]
+        reference_points_cam[..., 0] /= img_shape[0][1]
+        reference_points_cam[..., 1] /= img_shape[0][0]
 
         bev_mask = (bev_mask & (reference_points_cam[..., 1:2] > 0.0)
                     & (reference_points_cam[..., 1:2] < 1.0)
@@ -149,20 +146,22 @@ class BEVFormerEncoder(TransformerLayerSequence):
         return reference_points_cam, bev_mask
 
     @auto_fp16()
-    def forward(self,
-                bev_query,
-                key,
-                value,
-                *args,
-                bev_h=None,
-                bev_w=None,
-                bev_pos=None,
-                spatial_shapes=None,
-                level_start_index=None,
-                valid_ratios=None,
-                prev_bev=None,
-                shift=0.,
-                **kwargs):
+    def forward(
+        self,
+        bev_query,
+        key,
+        value,
+        bev_h=None,
+        bev_w=None,
+        bev_pos=None,
+        spatial_shapes=None,
+        level_start_index=None,
+        valid_ratios=None,
+        prev_bev=None,
+        shift=0.,
+        lidar2img=None,
+        img_shape=None,
+    ):
         """Forward function for `TransformerDecoder`.
         Args:
             bev_query (Tensor): Input BEV query with shape
@@ -191,7 +190,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
             bev_h, bev_w, dim='2d', bs=bev_query.size(1), device=bev_query.device, dtype=bev_query.dtype)
 
         reference_points_cam, bev_mask = self.point_sampling(
-            ref_3d, self.pc_range, kwargs['img_metas'])
+            ref_3d, self.pc_range, img_shape, lidar2img)
 
         # bug: this code should be 'shift_ref_2d = ref_2d.clone()', we keep this bug for reproducing our results in paper.
         shift_ref_2d = ref_2d.clone()
@@ -216,7 +215,6 @@ class BEVFormerEncoder(TransformerLayerSequence):
                 bev_query,
                 key,
                 value,
-                *args,
                 bev_pos=bev_pos,
                 ref_2d=hybird_ref_2d,
                 ref_3d=ref_3d,
@@ -227,7 +225,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
                 reference_points_cam=reference_points_cam,
                 bev_mask=bev_mask,
                 prev_bev=prev_bev,
-                **kwargs)
+            )
 
             bev_query = output
             if self.return_intermediate:
@@ -284,26 +282,28 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
         assert set(operation_order) == set(
             ['self_attn', 'norm', 'cross_attn', 'ffn'])
 
-    def forward(self,
-                query,
-                key=None,
-                value=None,
-                bev_pos=None,
-                query_pos=None,
-                key_pos=None,
-                attn_masks=None,
-                query_key_padding_mask=None,
-                key_padding_mask=None,
-                ref_2d=None,
-                ref_3d=None,
-                bev_h=None,
-                bev_w=None,
-                reference_points_cam=None,
-                mask=None,
-                spatial_shapes=None,
-                level_start_index=None,
-                prev_bev=None,
-                **kwargs):
+    def forward(
+        self,
+        query,
+        key=None,
+        value=None,
+        bev_pos=None,
+        query_pos=None,
+        key_pos=None,
+        attn_masks=None,
+        query_key_padding_mask=None,
+        key_padding_mask=None,
+        ref_2d=None,
+        ref_3d=None,
+        bev_h=None,
+        bev_w=None,
+        reference_points_cam=None,
+        mask=None,
+        spatial_shapes=None,
+        level_start_index=None,
+        bev_mask=None,
+        prev_bev=None,
+    ):
         """Forward function for `TransformerDecoderLayer`.
 
         **kwargs contains some specific arguments of attentions.
@@ -356,7 +356,6 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
         for layer in self.operation_order:
             # temporal self attention
             if layer == 'self_attn':
-
                 query = self.attentions[attn_index](
                     query,
                     prev_bev,
@@ -364,13 +363,12 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
                     identity if self.pre_norm else None,
                     query_pos=bev_pos,
                     key_pos=bev_pos,
-                    attn_mask=attn_masks[attn_index],
                     key_padding_mask=query_key_padding_mask,
                     reference_points=ref_2d,
                     spatial_shapes=torch.tensor(
                         [[bev_h, bev_w]], device=query.device),
                     level_start_index=torch.tensor([0], device=query.device),
-                    **kwargs)
+                )
                 attn_index += 1
                 identity = query
 
@@ -384,17 +382,15 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
                     query,
                     key,
                     value,
-                    identity if self.pre_norm else None,
+                    identity=identity if self.pre_norm else None,
                     query_pos=query_pos,
-                    key_pos=key_pos,
+                    bev_mask=bev_mask,
                     reference_points=ref_3d,
                     reference_points_cam=reference_points_cam,
-                    mask=mask,
-                    attn_mask=attn_masks[attn_index],
                     key_padding_mask=key_padding_mask,
                     spatial_shapes=spatial_shapes,
                     level_start_index=level_start_index,
-                    **kwargs)
+                )
                 attn_index += 1
                 identity = query
 
