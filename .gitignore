@@ -214,6 +214,7 @@ cython_debug/
 *.app
 
 # Assets
+assets/
 *.png
 
 # Third party

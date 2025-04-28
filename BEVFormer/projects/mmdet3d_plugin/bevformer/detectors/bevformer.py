@@ -53,8 +53,6 @@ class BEVFormer(MVXTwoStageDetector):
             True, True, rotate=1, offset=False, ratio=0.5, mode=1, prob=0.7)
         self.use_grid_mask = use_grid_mask
         self.fp16_enabled = False
-        # TODO: Allow users to specify the device via command line args
-        self.device = 'cuda' # cpu
 
         # temporal
         self.video_test_mode = video_test_mode
@@ -104,7 +102,73 @@ class BEVFormer(MVXTwoStageDetector):
         
         return img_feats
 
-    def forward(self, return_loss=True, **kwargs):
+    # def forward(self, return_loss=True, **kwargs):
+    #     rescale = kwargs['rescale']
+
+    #     img = kwargs['img'][0]
+    #     img_metas = kwargs['img_metas'][0][0]
+
+    #     ori_shape = img_metas['ori_shape']
+    #     ori_shape = torch.tensor(ori_shape)
+
+    #     img_shape = img_metas['img_shape']
+    #     img_shape = torch.tensor(img_shape)
+
+    #     lidar2img = img_metas['lidar2img']
+    #     lidar2img = torch.tensor(lidar2img)
+
+    #     lidar2cam = img_metas['lidar2cam']
+    #     lidar2cam = torch.tensor(lidar2cam)
+
+    #     pad_shape = img_metas['pad_shape']
+    #     pad_shape = torch.tensor(pad_shape)
+
+    #     scale_factor = img_metas['scale_factor']
+    #     flip = img_metas['flip']
+    #     pcd_horizontal_flip = img_metas['pcd_horizontal_flip']
+    #     pcd_vertical_flip = img_metas['pcd_vertical_flip']
+
+    #     box_mode_3d = img_metas['box_mode_3d']
+    #     box_type_3d = img_metas['box_type_3d']
+    #     img_norm_cfg = img_metas['img_norm_cfg']
+    #     sample_idx = img_metas['sample_idx']
+    #     prev_idx = img_metas['prev_idx']
+    #     next_idx = img_metas['next_idx']      
+    #     pts_filename = img_metas['pts_filename']
+    #     scene_token = img_metas['scene_token']
+
+    #     can_bus = img_metas['can_bus']
+    #     can_bus = torch.tensor(can_bus)
+
+    #     return self.forward_test(
+    #         img=img,
+    #         rescale=rescale,
+    #         ori_shape=ori_shape,
+    #         img_shape=img_shape,
+    #         lidar2img=lidar2img,
+    #         lidar2cam=lidar2cam,
+    #         pad_shape=pad_shape,
+    #         scale_factor=scale_factor,
+    #         flip=flip,
+    #         pcd_horizontal_flip=pcd_horizontal_flip,
+    #         pcd_vertical_flip=pcd_vertical_flip,
+    #         can_bus=can_bus,
+    #     )
+
+    def forward(self,
+        img,
+        rescale,
+        ori_shape,
+        img_shape,
+        lidar2img,
+        lidar2cam,
+        pad_shape,
+        scale_factor,
+        flip,
+        pcd_horizontal_flip,
+        pcd_vertical_flip,
+        can_bus,
+    ):
         """Calls either forward_train or forward_test depending on whether
         return_loss=True.
         Note this setting will change the expected inputs. When
@@ -114,47 +178,6 @@ class BEVFormer(MVXTwoStageDetector):
         list[list[dict]]), with the outer list indicating test time
         augmentations.
         """
-        rescale = kwargs['rescale']
-
-        if self.device == 'cuda':
-            img = kwargs['img'][0]
-            img_metas = kwargs['img_metas'][0][0]
-        else:
-            img = kwargs['img'][0].data[0]
-            img_metas = kwargs['img_metas'][0].data[0][0]
-
-        ori_shape = img_metas['ori_shape']
-        ori_shape = torch.tensor(ori_shape)
-
-        img_shape = img_metas['img_shape']
-        img_shape = torch.tensor(img_shape)
-
-        lidar2img = img_metas['lidar2img']
-        lidar2img = torch.tensor(lidar2img)
-
-        lidar2cam = img_metas['lidar2cam']
-        lidar2cam = torch.tensor(lidar2cam)
-
-        pad_shape = img_metas['pad_shape']
-        pad_shape = torch.tensor(pad_shape)
-
-        scale_factor = img_metas['scale_factor']
-        flip = img_metas['flip']
-        pcd_horizontal_flip = img_metas['pcd_horizontal_flip']
-        pcd_vertical_flip = img_metas['pcd_vertical_flip']
-
-        box_mode_3d = img_metas['box_mode_3d']
-        box_type_3d = img_metas['box_type_3d']
-        img_norm_cfg = img_metas['img_norm_cfg']
-        sample_idx = img_metas['sample_idx']
-        prev_idx = img_metas['prev_idx']
-        next_idx = img_metas['next_idx']      
-        pts_filename = img_metas['pts_filename']
-        scene_token = img_metas['scene_token']
-
-        can_bus = img_metas['can_bus']
-        can_bus = torch.tensor(can_bus)
-
         return self.forward_test(
             img=img,
             rescale=rescale,
@@ -219,7 +242,7 @@ class BEVFormer(MVXTwoStageDetector):
             can_bus[-1] = 0
             can_bus[:3] = 0
 
-        new_prev_bev, bbox_results =  self.simple_test(
+        new_prev_bev, bbox_results = self.simple_test(
             img=img,
             rescale=rescale,
             can_bus=can_bus,
@@ -231,7 +254,6 @@ class BEVFormer(MVXTwoStageDetector):
         self.prev_frame_info['prev_pos'] = tmp_pos
         self.prev_frame_info['prev_angle'] = tmp_angle
         self.prev_frame_info['prev_bev'] = new_prev_bev
-        # boxes_3d, scores_3d, labels_3d = bbox_results
         return bbox_results
 
     def simple_test(
@@ -243,7 +265,7 @@ class BEVFormer(MVXTwoStageDetector):
         img_shape=None,
         prev_bev=None,
     ):
-        img_feats = self.extract_feat(img=img,)
+        img_feats = self.extract_feat(img=img)
         outs = self.pts_bbox_head(
             img_feats,
             can_bus=can_bus,

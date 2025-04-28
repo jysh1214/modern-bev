@@ -71,23 +71,31 @@ MMCV_WITH_OPS=1 pip3.9 install -e . -v
 ```
 
 
-## Demo
+## Demo (WIP)
 
-Single GPU:
 ```bash
+# single gpu
 PYTHONPATH="$(pwd)":$PYTHONPATH python3.9 -m torch.distributed.launch --nproc_per_node=1 tools/test.py ./projects/configs/bevformer/bevformer_base.py ./ckpts/bevformer_r101_dcn_24ep.pth --launcher none --eval bbox
-```
 
-Single CPU:
-```bash
+# single cpu
 PYTHONPATH="$(pwd)":$PYTHONPATH python3.9 -m torch.distributed.launch tools/test.py ./projects/configs/bevformer/bevformer_base.py ./ckpts/bevformer_r101_dcn_24ep.pth --cpu --launcher none --eval bbox
 ```
 
-
-## Visulization
-
+Visulization.
 ```bash
 python3.9 tools/analysis_tools/visual.py test/$MODEL/$DATE/pts_bbox/results_nusc.json
+```
+
+
+## Inference
+
+Inference without post-processing:
+```bash
+# single gpu
+PYTHONPATH="$(pwd)":$PYTHONPATH python3.9 tools/inference.py --check --verbose
+
+# single cpu
+PYTHONPATH="$(pwd)":$PYTHONPATH python3.9 tools/inference.py --device=cpu --check --verbose
 ```
 
 
