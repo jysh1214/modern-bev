@@ -140,7 +140,8 @@ class SpatialCrossAttention(BaseModule):
         for i, mask_per_img in enumerate(bev_mask):
             index_query_per_img = mask_per_img[0].sum(-1).nonzero().squeeze(-1)
             indexes.append(index_query_per_img)
-        max_len = max([len(each) for each in indexes])
+        # max_len = max([len(each) for each in indexes])
+        max_len = 40000
 
         # each camera only interacts with its corresponding BEV queries. This step can  greatly save GPU memory.
         queries_rebatch = query.new_zeros(
@@ -204,22 +205,22 @@ class MSDeformableAttention3D(BaseModule):
     """
 
     def __init__(self,
-                 embed_dims=256,
-                 num_heads=8,
-                 num_levels=4,
-                 num_points=8,
-                 im2col_step=64,
-                 dropout=0.1,
-                 batch_first=True,
-                 norm_cfg=None,
-                 init_cfg=None):
+                 embed_dims=256,   # 256
+                 num_heads=8,      # 8
+                 num_levels=4,     # 4
+                 num_points=8,     # 8; number of sampling points in query
+                 im2col_step=64,   # 64
+                 dropout=0.1,      # 0.1
+                 batch_first=True, # True
+                 norm_cfg=None,    # None
+                 init_cfg=None):   # None
         super().__init__(init_cfg)
-        if embed_dims % num_heads != 0:
+        if embed_dims % num_heads != 0: # 256 % 8 == 0
             raise ValueError(f'embed_dims must be divisible by num_heads, '
                              f'but got {embed_dims} and {num_heads}')
-        dim_per_head = embed_dims // num_heads
-        self.norm_cfg = norm_cfg
-        self.batch_first = batch_first
+        dim_per_head = embed_dims // num_heads # 256 // 8 = 32
+        self.norm_cfg = norm_cfg               # None
+        self.batch_first = batch_first         # True
         self.output_proj = None
         self.fp16_enabled = False
 
@@ -239,11 +240,11 @@ class MSDeformableAttention3D(BaseModule):
                 'the dimension of each attention head a power of 2 '
                 'which is more efficient in our CUDA implementation.')
 
-        self.im2col_step = im2col_step
-        self.embed_dims = embed_dims
-        self.num_levels = num_levels
-        self.num_heads = num_heads
-        self.num_points = num_points
+        self.im2col_step = im2col_step # 64
+        self.embed_dims = embed_dims   # 256
+        self.num_levels = num_levels   # 4
+        self.num_heads = num_heads     # 8
+        self.num_points = num_points   # 8
         self.sampling_offsets = nn.Linear(
             embed_dims, num_heads * num_levels * num_points * 2)
         self.attention_weights = nn.Linear(embed_dims,
@@ -274,15 +275,15 @@ class MSDeformableAttention3D(BaseModule):
 
     def forward(
         self,
-        query,
-        key,
-        value,
-        identity=None,
-        query_pos=None,
-        key_padding_mask=None,
-        reference_points=None,
-        spatial_shapes=None,
-        level_start_index=None,
+        query,                  # (6, max_len=40000, 256)
+        key,                    # (6, 30825, 256); 30825 = (200 * 116) + (100 * 58) + (50 * 29) + (25 * 15)
+        value,                  # (6, 30825, 256); 30825 = (200 * 116) + (100 * 58) + (50 * 29) + (25 * 15)
+        identity=None,          # None
+        query_pos=None,         # None
+        key_padding_mask=None,  # None
+        reference_points=None,  # (6, 40000, 4, 2)
+        spatial_shapes=None,    # [(116, 200), (58, 100), (29, 50), (15, 25)]
+        level_start_index=None, # [(0, 23200, 29000, 30450)]; [0, 116*200, 116*200 + 58*100, 116*200 + 58*100 + 29*50]
     ):
         """Forward Function of MultiScaleDeformAttention.
         Args:
@@ -385,7 +386,8 @@ class MSDeformableAttention3D(BaseModule):
         #  attention_weights.shape: bs, num_query, num_heads, num_levels, num_all_points
         #
 
-        if torch.cuda.is_available() and value.is_cuda:
+        # if torch.cuda.is_available() and value.is_cuda:
+        if False:
             if value.dtype == torch.float16:
                 MultiScaleDeformableAttnFunction = MultiScaleDeformableAttnFunction_fp32
             else:
@@ -395,7 +397,11 @@ class MSDeformableAttention3D(BaseModule):
                 attention_weights, self.im2col_step)
         else:
             output = multi_scale_deformable_attn_pytorch(
-                value, spatial_shapes, sampling_locations, attention_weights)
+                value,              # (6, 30825, 8, 32)
+                spatial_shapes,     # [(116, 200), (58, 100), (29, 50), (15, 25)]
+                sampling_locations, # (6, 40000, 8, 4, 8, 2)
+                attention_weights   # (6, 40000, 8, 4, 8)
+            )
         if not self.batch_first:
             output = output.permute(1, 0, 2)
 

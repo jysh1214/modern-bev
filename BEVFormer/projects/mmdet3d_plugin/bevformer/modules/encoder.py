@@ -96,12 +96,10 @@ class BEVFormerEncoder(TransformerLayerSequence):
             lidar2img.unsqueeze(0).to(reference_points.device))  # (B, N, 4, 4)
         reference_points = reference_points.clone()
 
-        reference_points[..., 0:1] = reference_points[..., 0:1] * \
-            (pc_range[3] - pc_range[0]) + pc_range[0]
-        reference_points[..., 1:2] = reference_points[..., 1:2] * \
-            (pc_range[4] - pc_range[1]) + pc_range[1]
-        reference_points[..., 2:3] = reference_points[..., 2:3] * \
-            (pc_range[5] - pc_range[2]) + pc_range[2]
+        x = reference_points[..., 0:1] * (pc_range[3] - pc_range[0]) + pc_range[0]
+        y = reference_points[..., 1:2] * (pc_range[4] - pc_range[1]) + pc_range[1]
+        z = reference_points[..., 2:3] * (pc_range[5] - pc_range[2]) + pc_range[2]
+        reference_points = torch.cat([x, y, z], dim=-1)
 
         reference_points = torch.cat(
             (reference_points, torch.ones_like(reference_points[..., :1])), -1)
@@ -121,21 +119,60 @@ class BEVFormerEncoder(TransformerLayerSequence):
         eps = 1e-5
 
         bev_mask = (reference_points_cam[..., 2:3] > eps)
-        reference_points_cam = reference_points_cam[..., 0:2] / torch.maximum(
+        reference_points_cam = reference_points_cam[..., 0:2] / torch.max(
             reference_points_cam[..., 2:3], torch.ones_like(reference_points_cam[..., 2:3]) * eps)
 
-        reference_points_cam[..., 0] /= img_shape[0][1]
-        reference_points_cam[..., 1] /= img_shape[0][0]
+        xx = reference_points_cam[..., 0:1] / img_shape[0][1]
+        yy = reference_points_cam[..., 1:2] / img_shape[0][0]
+        other_dims = reference_points_cam[..., 2:]
+        reference_points_cam = torch.cat([xx, yy, other_dims], dim=-1)
 
         bev_mask = (bev_mask & (reference_points_cam[..., 1:2] > 0.0)
-                    & (reference_points_cam[..., 1:2] < 1.0)
-                    & (reference_points_cam[..., 0:1] < 1.0)
-                    & (reference_points_cam[..., 0:1] > 0.0))
-        if digit_version(TORCH_VERSION) >= digit_version('1.8'):
-            bev_mask = torch.nan_to_num(bev_mask)
-        else:
-            bev_mask = bev_mask.new_tensor(
-                np.nan_to_num(bev_mask.cpu().numpy()))
+                   & (reference_points_cam[..., 1:2] < 1.0)
+                   & (reference_points_cam[..., 0:1] < 1.0)
+                   & (reference_points_cam[..., 0:1] > 0.0))
+
+
+        # reference_points[..., 0:1] = reference_points[..., 0:1] * \
+        #     (pc_range[3] - pc_range[0]) + pc_range[0]
+        # reference_points[..., 1:2] = reference_points[..., 1:2] * \
+        #     (pc_range[4] - pc_range[1]) + pc_range[1]
+        # reference_points[..., 2:3] = reference_points[..., 2:3] * \
+        #     (pc_range[5] - pc_range[2]) + pc_range[2]
+
+        # reference_points = torch.cat(
+        #     (reference_points, torch.ones_like(reference_points[..., :1])), -1)
+
+        # reference_points = reference_points.permute(1, 0, 2, 3)
+        # D, B, num_query = reference_points.size()[:3]
+        # num_cam = lidar2img.size(1)
+
+        # reference_points = reference_points.view(
+        #     D, B, 1, num_query, 4).repeat(1, 1, num_cam, 1, 1).unsqueeze(-1)
+
+        # lidar2img = lidar2img.view(
+        #     1, B, num_cam, 1, 4, 4).repeat(D, 1, 1, num_query, 1, 1)
+
+        # reference_points_cam = torch.matmul(lidar2img.to(torch.float32),
+        #                                     reference_points.to(torch.float32)).squeeze(-1)
+        # eps = 1e-5
+
+        # bev_mask = (reference_points_cam[..., 2:3] > eps)
+        # reference_points_cam = reference_points_cam[..., 0:2] / torch.maximum(
+        #     reference_points_cam[..., 2:3], torch.ones_like(reference_points_cam[..., 2:3]) * eps)
+
+        # reference_points_cam[..., 0] /= img_shape[0][1]
+        # reference_points_cam[..., 1] /= img_shape[0][0]
+
+        # bev_mask = (bev_mask & (reference_points_cam[..., 1:2] > 0.0)
+        #             & (reference_points_cam[..., 1:2] < 1.0)
+        #             & (reference_points_cam[..., 0:1] < 1.0)
+        #             & (reference_points_cam[..., 0:1] > 0.0))
+        # if digit_version(TORCH_VERSION) >= digit_version('1.8'):
+        #     bev_mask = torch.nan_to_num(bev_mask)
+        # else:
+        #     bev_mask = bev_mask.new_tensor(
+        #         np.nan_to_num(bev_mask.cpu().numpy()))
 
         reference_points_cam = reference_points_cam.permute(2, 1, 3, 0, 4)
         bev_mask = bev_mask.permute(2, 1, 3, 0, 4).squeeze(-1)
@@ -357,18 +394,18 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
             # temporal self attention
             if layer == 'self_attn':
                 query = self.attentions[attn_index](
-                    query,
-                    prev_bev,
-                    prev_bev,
-                    identity if self.pre_norm else None,
-                    query_pos=bev_pos,
-                    key_pos=bev_pos,
-                    key_padding_mask=query_key_padding_mask,
-                    reference_points=ref_2d,
+                    query,    # (1, 40000, 256)
+                    prev_bev, # None
+                    prev_bev, # None
+                    identity if self.pre_norm else None, # (1, 40000, 256)
+                    query_pos=bev_pos, # (1, 40000, 256)
+                    key_pos=bev_pos, # (1, 40000, 256)
+                    key_padding_mask=query_key_padding_mask, # None
+                    reference_points=ref_2d, # (2, 40000, 1, 2)
                     spatial_shapes=torch.tensor(
                         [[bev_h, bev_w]], device=query.device),
                     level_start_index=torch.tensor([0], device=query.device),
-                )
+                ) # -> (1, 40000, 256)
                 attn_index += 1
                 identity = query
 

@@ -121,11 +121,15 @@ class DetectionTransformerDecoder(TransformerLayerSequence):
 
                 assert reference_points.shape[-1] == 3
 
-                new_reference_points = torch.zeros_like(reference_points)
-                new_reference_points[..., :2] = tmp[
-                    ..., :2] + inverse_sigmoid(reference_points[..., :2])
-                new_reference_points[..., 2:3] = tmp[
-                    ..., 4:5] + inverse_sigmoid(reference_points[..., 2:3])
+                # new_reference_points = torch.zeros_like(reference_points)
+                # new_reference_points[..., :2] = tmp[
+                #     ..., :2] + inverse_sigmoid(reference_points[..., :2])
+                # new_reference_points[..., 2:3] = tmp[
+                #     ..., 4:5] + inverse_sigmoid(reference_points[..., 2:3])
+                # breakpoint()
+                tmp_0 = tmp[..., :2] + inverse_sigmoid(reference_points[..., :2])
+                tmp_1 = tmp[..., 4:5] + inverse_sigmoid(reference_points[..., 2:3])
+                new_reference_points = torch.cat([tmp_0, tmp_1], dim=-1)
 
                 new_reference_points = new_reference_points.sigmoid()
 

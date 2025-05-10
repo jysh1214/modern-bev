@@ -118,9 +118,9 @@ class PerceptionTransformer(BaseModule):
         obtain bev features.
         """
 
-        bs = mlvl_feats[0].size(0)
-        bev_queries = bev_queries.unsqueeze(1).repeat(1, bs, 1)
-        bev_pos = bev_pos.flatten(2).permute(2, 0, 1)
+        bs = mlvl_feats[0].size(0) # 1
+        bev_queries = bev_queries.unsqueeze(1).repeat(1, bs, 1) # (40000, 256) -> (40000, 1, 256)
+        bev_pos = bev_pos.flatten(2).permute(2, 0, 1) # (1, 256, 200, 200) -> (40000, 1, 256)
 
         # obtain rotation angle and shift with ego motion
         delta_x = np.array([can_bus[0]])
@@ -175,28 +175,28 @@ class PerceptionTransformer(BaseModule):
             spatial_shapes.append(spatial_shape)
             feat_flatten.append(feat)
 
-        feat_flatten = torch.cat(feat_flatten, 2)
-        spatial_shapes = torch.as_tensor(
+        feat_flatten = torch.cat(feat_flatten, 2) # (6, 30825, 1, 256); 30825 = (200 * 116) + (100 * 58) + (50 * 29) + (25 * 15)
+        spatial_shapes = torch.as_tensor( # (4, 2); [(116, 200), (58, 100), (29, 50), (15, 25)]
             spatial_shapes, dtype=torch.long, device=bev_pos.device)
-        level_start_index = torch.cat((spatial_shapes.new_zeros(
+        level_start_index = torch.cat((spatial_shapes.new_zeros( # [0, 23200, 29000, 30450]; [0, 116*200, 116*200 + 58*100, 116*200 + 58*100 + 29*50]
             (1,)), spatial_shapes.prod(1).cumsum(0)[:-1]))
 
         feat_flatten = feat_flatten.permute(
             0, 2, 1, 3)  # (num_cam, H*W, bs, embed_dims)
 
         bev_embed = self.encoder(
-            bev_queries,
-            feat_flatten,
-            feat_flatten,
-            bev_h=bev_h,
-            bev_w=bev_w,
-            bev_pos=bev_pos,
-            spatial_shapes=spatial_shapes,
-            level_start_index=level_start_index,
-            prev_bev=prev_bev,
-            shift=shift,
-            lidar2img=lidar2img,
-            img_shape=img_shape,
+            bev_queries,  # (40000, 1, 256)
+            feat_flatten, # (6, 30825, 1, 256)
+            feat_flatten, # (6, 30825, 1, 256)
+            bev_h=bev_h,  # 200
+            bev_w=bev_w,  # 200
+            bev_pos=bev_pos, # (40000, 1, 256)
+            spatial_shapes=spatial_shapes, # [(116, 200), (58, 100), (29, 50), (15, 25)]
+            level_start_index=level_start_index, # [(0, 23200, 29000, 30450)]; [0, 116*200, 116*200 + 58*100, 116*200 + 58*100 + 29*50]
+            prev_bev=prev_bev, # None
+            shift=shift, # (1, 2); [(-0., 0.)]
+            lidar2img=lidar2img, # (6, 4, 4)
+            img_shape=img_shape, # (6, 3); [(928, 1600, 3) * 6]
         )
 
         return bev_embed
@@ -256,16 +256,16 @@ class PerceptionTransformer(BaseModule):
         """
 
         bev_embed = self.get_bev_features(
-            mlvl_feats,
-            bev_queries,
-            bev_h,
-            bev_w,
-            grid_length=grid_length,
-            bev_pos=bev_pos,
-            prev_bev=prev_bev,
-            can_bus=can_bus,
-            lidar2img=lidar2img,
-            img_shape=img_shape,
+            mlvl_feats, # [(1, 6, 256, 116, 200), (1, 6, 256, 58, 100), (1, 6, 256, 29, 50), (1, 6, 256, 15, 25)]
+            bev_queries, # (40000, 256)
+            bev_h, # 200
+            bev_w, # 200
+            grid_length=grid_length, # (0.512, 0.512)
+            bev_pos=bev_pos, # (1, 256, 200, 200), f32
+            prev_bev=prev_bev, # None
+            can_bus=can_bus, # (18), f64
+            lidar2img=lidar2img, # (6, 4, 4), f64
+            img_shape=img_shape, # (6, 3), i64; [(928, 1600, 3) * 6]
         )  # bev_embed shape: bs, bev_h*bev_w, embed_dims
 
         bs = mlvl_feats[0].size(0)

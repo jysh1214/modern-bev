@@ -140,14 +140,16 @@ class BEVFormerHead(DETRHead):
                 head with normalized coordinate format (cx, cy, w, l, cz, h, theta, vx, vy). \
                 Shape [nb_dec, bs, num_query, 9].
         """
-        bs, num_cam, _, _, _ = mlvl_feats[0].shape
-        dtype = mlvl_feats[0].dtype
-        object_query_embeds = self.query_embedding.weight.to(dtype)
-        bev_queries = self.bev_embedding.weight.to(dtype)
-
-        bev_mask = torch.zeros((bs, self.bev_h, self.bev_w),
-                               device=bev_queries.device).to(dtype)
-        bev_pos = self.positional_encoding(bev_mask).to(dtype)
+        bs, num_cam, _, _, _ = mlvl_feats[0].shape # (1, 6, 256, 116, 200)
+        dtype = mlvl_feats[0].dtype # torch.float32
+        object_query_embeds = self.query_embedding.weight.to(dtype) # (900, 512), f32
+        bev_queries = self.bev_embedding.weight.to(dtype) # (40000, 256), f32
+        bev_mask = torch.zeros((
+            bs,         # 1
+            self.bev_h, # 200
+            self.bev_w  # 200
+        ), device=bev_queries.device).to(dtype)
+        bev_pos = self.positional_encoding(bev_mask).to(dtype) # (1, 256, 200, 200), f32
 
         if only_bev:  # only use encoder to obtain BEV features, TODO: refine the workaround
             return self.transformer.get_bev_features(
@@ -165,21 +167,25 @@ class BEVFormerHead(DETRHead):
             )
         else:
             outputs = self.transformer(
-                mlvl_feats,
-                bev_queries,
-                object_query_embeds,
-                self.bev_h,
-                self.bev_w,
-                grid_length=(self.real_h / self.bev_h,
-                             self.real_w / self.bev_w),
-                bev_pos=bev_pos,
+                mlvl_feats, # [(1, 6, 256, 116, 200), (1, 6, 256, 58, 100), (1, 6, 256, 29, 50), (1, 6, 256, 15, 25)], f32
+                bev_queries, # (40000, 256), f32
+                object_query_embeds, # (900, 512), f32
+                self.bev_h, # 200
+                self.bev_w, # 200
+                grid_length=(self.real_h / self.bev_h, # 102.4 / 200
+                             self.real_w / self.bev_w), # 102.4 / 200
+                bev_pos=bev_pos, # (1, 256, 200, 200), f32
                 reg_branches=self.reg_branches if self.with_box_refine else None,  # noqa:E501
                 cls_branches=self.cls_branches if self.as_two_stage else None,
-                prev_bev=prev_bev,
-                can_bus=can_bus,
-                lidar2img=lidar2img,
-                img_shape=img_shape,
-        )
+                prev_bev=prev_bev, # None
+                can_bus=can_bus, # (18), f64
+                lidar2img=lidar2img, # (6, 4, 4), f64
+                img_shape=img_shape, # (6, 3), i64; [(928, 1600, 3) * 6]
+        ) # -> ((40000, 1, 256),
+        #       (6, 900, 1, 256),
+        #       (1, 900, 3),
+        #       (6, 1, 900, 3),
+        # )
 
         bev_embed, hs, init_reference, inter_references = outputs
         hs = hs.permute(0, 2, 1, 3)

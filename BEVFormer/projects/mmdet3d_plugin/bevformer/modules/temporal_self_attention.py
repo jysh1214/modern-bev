@@ -84,12 +84,12 @@ class TemporalSelfAttention(BaseModule):
                 'the dimension of each attention head a power of 2 '
                 'which is more efficient in our CUDA implementation.')
 
-        self.im2col_step = im2col_step
-        self.embed_dims = embed_dims
-        self.num_levels = num_levels
-        self.num_heads = num_heads
-        self.num_points = num_points
-        self.num_bev_queue = num_bev_queue
+        self.im2col_step = im2col_step # 64
+        self.embed_dims = embed_dims # 256
+        self.num_levels = num_levels # 1
+        self.num_heads = num_heads # 8
+        self.num_points = num_points # 4
+        self.num_bev_queue = num_bev_queue # 2
         self.sampling_offsets = nn.Linear(
             embed_dims*self.num_bev_queue, num_bev_queue*num_heads * num_levels * num_points * 2)
         self.attention_weights = nn.Linear(embed_dims*self.num_bev_queue,
@@ -121,16 +121,16 @@ class TemporalSelfAttention(BaseModule):
 
     def forward(
         self,
-        query,
-        key=None,
-        value=None,
-        identity=None,
-        query_pos=None,
-        key_pos=None,
-        reference_points=None,
-        key_padding_mask=None,
-        spatial_shapes=None,
-        level_start_index=None,
+        query,                  # (1, 40000, 256)
+        key=None,               # None
+        value=None,             # None
+        identity=None,          # None
+        query_pos=None,         # (1, 40000, 256)
+        key_pos=None,           # (1, 40000, 256)
+        reference_points=None,  # (2, 40000, 1, 2); calculated from get_reference_points
+        key_padding_mask=None,  # None
+        spatial_shapes=None,    # [(200, 200)]
+        level_start_index=None, # [(0)]
         flag='decoder',
     ):
         """Forward Function of MultiScaleDeformAttention.
@@ -198,21 +198,26 @@ class TemporalSelfAttention(BaseModule):
         value = value.reshape(bs*self.num_bev_queue,
                               num_value, self.num_heads, -1)
 
-        sampling_offsets = self.sampling_offsets(query)
-        sampling_offsets = sampling_offsets.view(
+        sampling_offsets = self.sampling_offsets(query)         # (1, 40000, 128); learnable
+        sampling_offsets = sampling_offsets.view(               # (1, 40000, 8, 2, 1, 4, 2)
             bs, num_query, self.num_heads,  self.num_bev_queue, self.num_levels, self.num_points, 2)
-        attention_weights = self.attention_weights(query).view(
+        attention_weights = self.attention_weights(query).view( # (1, 40000, 8, 2, 1, 4, 2)
             bs, num_query,  self.num_heads, self.num_bev_queue, self.num_levels * self.num_points)
         attention_weights = attention_weights.softmax(-1)
 
-        attention_weights = attention_weights.view(bs, num_query,
-                                                   self.num_heads,
-                                                   self.num_bev_queue,
-                                                   self.num_levels,
-                                                   self.num_points)
+        attention_weights = attention_weights.view( # (1, 40000, 8, 2, 1, 4)
+            bs,                 # 1
+            num_query,          # 40000
+            self.num_heads,     # 8
+            self.num_bev_queue, # 2
+            self.num_levels,    # 1
+            self.num_points     # 4
+        )
 
+        # (1, 40000, 8, 2, 1, 4) -> (2, 40000, 8, 1, 4)
         attention_weights = attention_weights.permute(0, 3, 1, 2, 4, 5)\
             .reshape(bs*self.num_bev_queue, num_query, self.num_heads, self.num_levels, self.num_points).contiguous()
+        # (1, 40000, 8, 2, 1, 4, 2) -> (2, 40000, 8, 1, 4, 2)
         sampling_offsets = sampling_offsets.permute(0, 3, 1, 2, 4, 5, 6)\
             .reshape(bs*self.num_bev_queue, num_query, self.num_heads, self.num_levels, self.num_points, 2)
 
@@ -232,7 +237,8 @@ class TemporalSelfAttention(BaseModule):
             raise ValueError(
                 f'Last dim of reference_points must be'
                 f' 2 or 4, but get {reference_points.shape[-1]} instead.')
-        if torch.cuda.is_available() and value.is_cuda:
+        #if torch.cuda.is_available() and value.is_cuda:
+        if False:
 
             # using fp16 deformable attention is unstable because it performs many sum operations
             if value.dtype == torch.float16:
@@ -245,7 +251,28 @@ class TemporalSelfAttention(BaseModule):
         else:
 
             output = multi_scale_deformable_attn_pytorch(
-                value, spatial_shapes, sampling_locations, attention_weights)
+                value,              # (2, 40000, 8, 32)
+                spatial_shapes,     # ([200, 200])
+                sampling_locations, # (2, 40000, 8, 1, 4, 2); the last dimension 2 represent (x, y)
+                attention_weights   # (2, 40000, 8, 1, 4)
+            )
+
+            # Convert sampling coordinates from [0, 1] to [-1, 1] 
+            # for use in F.grid_sample, which expects normalized grid in [-1, 1]
+            # sampling_grids = 2 * sampling_locations - 1
+
+            # When `num_points = 4`, each query generates 4 sampling locations 
+            # by adding learned offsets to its reference point. 
+            # Each of these 4 locations undergoes separate bilinear interpolation 
+            # on the feature map to retrieve a feature vector. 
+            # These sampled features are then weighted and aggregated 
+            # to compute the final attention output for the query.
+            # sampling_value_l_ = F.grid_sample(
+            #     value_l_,
+            #     sampling_grid_l_,
+            #     mode='bilinear',
+            #     padding_mode='zeros',
+            #     align_corners=False)
 
         # output shape (bs*num_bev_queue, num_query, embed_dims)
         # (bs*num_bev_queue, num_query, embed_dims)-> (num_query, embed_dims, bs*num_bev_queue)

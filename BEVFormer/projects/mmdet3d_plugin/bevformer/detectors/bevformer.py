@@ -72,17 +72,26 @@ class BEVFormer(MVXTwoStageDetector):
             if img.dim() == 5 and img.size(0) == 1:
                 img.squeeze_()
             elif img.dim() == 5 and img.size(0) > 1:
-                B, N, C, H, W = img.size()
+                B, N, C, H, W = img.size() # (1, 6, 3, 928, 1600)
                 img = img.reshape(B * N, C, H, W)
             if self.use_grid_mask:
                 img = self.grid_mask(img)
 
+            # milti-scale features from backbone
+            # - (6, 512, 116, 200)
+            # - (6, 1024, 58, 100)
+            # - (6, 2048, 29, 50)
             img_feats = self.img_backbone(img)
             if isinstance(img_feats, dict):
                 img_feats = list(img_feats.values())
         else:
             return None
         if self.with_img_neck:
+            # milti-scale features from neck
+            # - (6, 256, 116, 200)
+            # - (6, 256, 58, 100)
+            # - (6, 256, 29, 50)
+            # - (6, 256, 15, 25)
             img_feats = self.img_neck(img_feats)
 
         img_feats_reshaped = []
@@ -102,82 +111,44 @@ class BEVFormer(MVXTwoStageDetector):
         
         return img_feats
 
-    # def forward(self, return_loss=True, **kwargs):
-    #     rescale = kwargs['rescale']
+    def forward(self, return_loss=True, **kwargs):
+        rescale = kwargs['rescale']
 
-    #     img = kwargs['img'][0]
-    #     img_metas = kwargs['img_metas'][0][0]
+        img = kwargs['img'][0]
+        img_metas = kwargs['img_metas'][0][0]
 
-    #     ori_shape = img_metas['ori_shape']
-    #     ori_shape = torch.tensor(ori_shape)
+        ori_shape = img_metas['ori_shape']
+        ori_shape = torch.tensor(ori_shape)
 
-    #     img_shape = img_metas['img_shape']
-    #     img_shape = torch.tensor(img_shape)
+        img_shape = img_metas['img_shape']
+        img_shape = torch.tensor(img_shape)
 
-    #     lidar2img = img_metas['lidar2img']
-    #     lidar2img = torch.tensor(lidar2img)
+        lidar2img = img_metas['lidar2img']
+        lidar2img = torch.tensor(lidar2img)
 
-    #     lidar2cam = img_metas['lidar2cam']
-    #     lidar2cam = torch.tensor(lidar2cam)
+        lidar2cam = img_metas['lidar2cam']
+        lidar2cam = torch.tensor(lidar2cam)
 
-    #     pad_shape = img_metas['pad_shape']
-    #     pad_shape = torch.tensor(pad_shape)
+        pad_shape = img_metas['pad_shape']
+        pad_shape = torch.tensor(pad_shape)
 
-    #     scale_factor = img_metas['scale_factor']
-    #     flip = img_metas['flip']
-    #     pcd_horizontal_flip = img_metas['pcd_horizontal_flip']
-    #     pcd_vertical_flip = img_metas['pcd_vertical_flip']
+        scale_factor = img_metas['scale_factor']
+        flip = img_metas['flip']
+        pcd_horizontal_flip = img_metas['pcd_horizontal_flip']
+        pcd_vertical_flip = img_metas['pcd_vertical_flip']
 
-    #     box_mode_3d = img_metas['box_mode_3d']
-    #     box_type_3d = img_metas['box_type_3d']
-    #     img_norm_cfg = img_metas['img_norm_cfg']
-    #     sample_idx = img_metas['sample_idx']
-    #     prev_idx = img_metas['prev_idx']
-    #     next_idx = img_metas['next_idx']      
-    #     pts_filename = img_metas['pts_filename']
-    #     scene_token = img_metas['scene_token']
+        box_mode_3d = img_metas['box_mode_3d']
+        box_type_3d = img_metas['box_type_3d']
+        img_norm_cfg = img_metas['img_norm_cfg']
+        sample_idx = img_metas['sample_idx']
+        prev_idx = img_metas['prev_idx']
+        next_idx = img_metas['next_idx']      
+        pts_filename = img_metas['pts_filename']
+        scene_token = img_metas['scene_token']
 
-    #     can_bus = img_metas['can_bus']
-    #     can_bus = torch.tensor(can_bus)
+        can_bus = img_metas['can_bus']
+        can_bus = torch.tensor(can_bus)
 
-    #     return self.forward_test(
-    #         img=img,
-    #         rescale=rescale,
-    #         ori_shape=ori_shape,
-    #         img_shape=img_shape,
-    #         lidar2img=lidar2img,
-    #         lidar2cam=lidar2cam,
-    #         pad_shape=pad_shape,
-    #         scale_factor=scale_factor,
-    #         flip=flip,
-    #         pcd_horizontal_flip=pcd_horizontal_flip,
-    #         pcd_vertical_flip=pcd_vertical_flip,
-    #         can_bus=can_bus,
-    #     )
-
-    def forward(self,
-        img,
-        rescale,
-        ori_shape,
-        img_shape,
-        lidar2img,
-        lidar2cam,
-        pad_shape,
-        scale_factor,
-        flip,
-        pcd_horizontal_flip,
-        pcd_vertical_flip,
-        can_bus,
-    ):
-        """Calls either forward_train or forward_test depending on whether
-        return_loss=True.
-        Note this setting will change the expected inputs. When
-        `return_loss=True`, img and img_metas are single-nested (i.e.
-        torch.Tensor and list[dict]), and when `resturn_loss=False`, img and
-        img_metas should be double nested (i.e.  list[torch.Tensor],
-        list[list[dict]]), with the outer list indicating test time
-        augmentations.
-        """
         return self.forward_test(
             img=img,
             rescale=rescale,
@@ -192,6 +163,44 @@ class BEVFormer(MVXTwoStageDetector):
             pcd_vertical_flip=pcd_vertical_flip,
             can_bus=can_bus,
         )
+
+    # def forward(self,
+    #     img,
+    #     rescale,
+    #     ori_shape,
+    #     img_shape,
+    #     lidar2img,
+    #     lidar2cam,
+    #     pad_shape,
+    #     scale_factor,
+    #     flip,
+    #     pcd_horizontal_flip,
+    #     pcd_vertical_flip,
+    #     can_bus,
+    # ):
+    #     """Calls either forward_train or forward_test depending on whether
+    #     return_loss=True.
+    #     Note this setting will change the expected inputs. When
+    #     `return_loss=True`, img and img_metas are single-nested (i.e.
+    #     torch.Tensor and list[dict]), and when `resturn_loss=False`, img and
+    #     img_metas should be double nested (i.e.  list[torch.Tensor],
+    #     list[list[dict]]), with the outer list indicating test time
+    #     augmentations.
+    #     """
+    #     return self.forward_test(
+    #         img=img,
+    #         rescale=rescale,
+    #         ori_shape=ori_shape,
+    #         img_shape=img_shape,
+    #         lidar2img=lidar2img,
+    #         lidar2cam=lidar2cam,
+    #         pad_shape=pad_shape,
+    #         scale_factor=scale_factor,
+    #         flip=flip,
+    #         pcd_horizontal_flip=pcd_horizontal_flip,
+    #         pcd_vertical_flip=pcd_vertical_flip,
+    #         can_bus=can_bus,
+    #     )
     
     def obtain_history_bev(self, imgs_queue, img_metas_list):
         """Obtain history BEV features iteratively. To save GPU memory, gradients are not calculated.
@@ -265,7 +274,12 @@ class BEVFormer(MVXTwoStageDetector):
         img_shape=None,
         prev_bev=None,
     ):
-        img_feats = self.extract_feat(img=img)
+        img_feats = self.extract_feat(
+            img=img # (1, 6, 3, 928, 1600)
+        ) # -> [(1, 6, 256, 116, 200),
+        #       (1, 6, 256,  58, 100),
+        #       (1, 6, 256,  29,  50),
+        #       (1, 6, 256,  15,  25) ]
         outs = self.pts_bbox_head(
             img_feats,
             can_bus=can_bus,
@@ -273,7 +287,13 @@ class BEVFormer(MVXTwoStageDetector):
             img_shape=img_shape,
             prev_bev=prev_bev,
             only_bev=False,
-        )
+        ) # -> dict{
+        #     'bev_embed'     : (40000, 1, 256), f32
+        #     'all_cls_scores': (6, 1, 900, 10), f32
+        #     'all_bbox_preds': (6, 1, 900, 10), f32
+        #     'enc_cls_scores': None
+        #     'enc_bbox_preds': None
+        # }
         bbox_list = self.pts_bbox_head.get_bboxes(
             outs, rescale=rescale,
         )
